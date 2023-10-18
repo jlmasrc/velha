@@ -9,3 +9,9 @@ gcc -o velha velha.c
 
 For details, run
 ./velha -h
+
+To demonstrate that all games with perfect players end in draw, run
+./velha -n 2
+And give the command 'a':
+Move for player X> a
+Analysis will show that all first moves result in draw.
