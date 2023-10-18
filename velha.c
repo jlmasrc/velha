@@ -196,6 +196,8 @@ int think(char board[][3], movelist *lst, int player) {
 void select_moves(movelist *lst, movelist *sel, int sts) {
     move_t *lst_end = lst->move + lst->length;
 
+    sel->length = 0;
+
     for(move_t *p = lst->move; p != lst_end; p++)
         if(p->status == sts) addmove(sel, p->lin, p->col, sts);
 
