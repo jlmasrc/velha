@@ -118,38 +118,25 @@ int value(int st, int player) {
 
 /*** Data structures **********************************************************/
 
-/* First part of output data for think() */
-typedef struct {
-    /* Status of the game as returned by status(). */
-    int status;
-    /* Number of moves needed to reach the above status. */
-    int depth;
-    /* Total number of moves calculated in the analysis. */
-    int move_count;
-} thinkdata;
-
 /* Record for 1 move */
 typedef struct {
     /* Line and column of the move. */
     int lin, col;
     /* Resulting status of the move. */
     int status;
-    /* Number of moves needed to reach the above status after this move. */
-    int depth;
 } move_t;
 
-/* Second part of output data fot think(). This is a list of possible
-   moves. */
+/* List of movess. */
 typedef struct {
     move_t move[9];
     int length;
 } movelist;
 
 /* Adds a move to lst. */
-void addmove(movelist *lst, int lin, int col, int sts, int dep) {
+void addmove(movelist *lst, int lin, int col, int sts) {
     lst->move[lst->length++] =
         /* C99 compound literal. */
-        (move_t){.lin = lin, .col = col, .status = sts, .depth = dep,};
+        (move_t){.lin = lin, .col = col, .status = sts,};
 }
 
 /********************************************************** Data structures ***/
@@ -162,60 +149,42 @@ int opponent(int player) {
     return player == 'X' ? 'O' : 'X';
 }
 
-/* Recursivelly descends the game tree to evaluate the best immediate
-   move for player ('X' or 'O'). The argument lst is optional (may be
-   NULL). */
-void think(char board[][3], thinkdata *data, movelist *lst, int player) {
+/* Analyses the current board configuration and returns the status for
+   the best move relative to player. If lst is not NULL, it contains
+   the list of all possible moves from the board configuration with
+   their resulting status */
+int think(char board[][3], movelist *lst, int player) {
     int const opp = opponent(player);
-    int best_val = -2; /* Dummy value that gets overwritten below. */
+     /* Dummy values that get overwritten below. */
+    int best_val = -2, best_status = 0;
 
-    data->move_count = 0;
     if(lst) lst->length = 0;
 
     for(int lin = 0; lin < 3; lin++) {
         for(int col = 0; col < 3; col++) {
-            int sts, dep, val;
+            int sts, val;
 
             /* Do not overwrite a mark. */
             if(board[lin][col] != ' ') continue;
 
-            data->move_count++;
-
             /* Mark the board, evaluate the status and unmark it. */
             board[lin][col] = player;
-            /* If the mark does not define the game status, descend. */
-            if((sts = status(board))) {
-                dep = 1;
-            } else {
-                thinkdata subdata;
-                think(board, &subdata, NULL, opp);
-                sts = subdata.status;
-                data->move_count += subdata.move_count;
-                dep = subdata.depth + 1;
-            }
+            /* If the mark does not define the game status, descend
+               into the game tree. */
+            if(!(sts = status(board))) sts = think(board, NULL, opp);
             board[lin][col] = ' ';
 
-            if(lst) addmove(lst, lin, col, sts, dep);
+            if(lst) addmove(lst, lin, col, sts);
 
             if((val = value(sts, player)) > best_val) {
-                /* We get always here in the first loop, so data->depth and
-                   data->status do get initialized here. */
                 best_val = val;
-                data->depth = dep;
-                data->status = sts;
-            } else if(val == best_val) {
-                if(sts == player) {
-                    /* If it is a winning move, we choose the shortest path. */
-                    if(dep < data->depth) data->depth = dep;
-                } else {
-                    /* Otherwise, we choose the longest path. */
-                    if(dep > data->depth) data->depth = dep;
-                }
+                best_status = sts;
             }
 
         }
     }
 
+    return best_status;
 }
 
 /******************************************************* Recursive analyser ***/
@@ -223,28 +192,12 @@ void think(char board[][3], thinkdata *data, movelist *lst, int player) {
 
 /*** Computer personality *****************************************************/
 
-/* Filter the best moves from list into best given it is player's turn. */
-void bestmoves(thinkdata *data, movelist *list, movelist *best, int player) {
-    move_t *list_end = list->move + list->length;
-    int dep;
+/* Selects all status from lst that have status sts and stores them in sel. */
+void select_moves(movelist *lst, movelist *sel, int sts) {
+    move_t *lst_end = lst->move + lst->length;
 
-    best->length = 0;
-
-    if(data->status == player) {
-        /* There are winning moves. Choose the fastest ones. */
-        dep = 100;
-        for(move_t *p = list->move; p != list_end; p++)
-            if(p->status == data->status && p->depth < dep) dep = p->depth;
-    } else {
-        /* There are no winning moves. Choose the slowest ones. */
-        dep = -100;
-        for(move_t *p = list->move; p != list_end; p++)
-            if(p->status == data->status && p->depth > dep) dep = p->depth;
-    }
-
-    for(move_t *p = list->move; p != list_end; p++)
-        if(p->status == data->status && p->depth == dep)
-            addmove(best, p->lin, p->col, p->status, p->depth);
+    for(move_t *p = lst->move; p != lst_end; p++)
+        if(p->status == sts) addmove(sel, p->lin, p->col, sts);
 
 }
 
@@ -337,15 +290,13 @@ char *encode_move(int lin, int col) {
 /*** Game analysis ************************************************************/
 
 /* Auxiliary to print_analysis() */
-void print_moves(movelist *list, int sts) {
-    move_t *list_end = list->move + list->length;
+void print_moves(movelist *lst, int sts) {
+    move_t *list_end = lst->move + lst->length;
     int firstline = 1;
-    for(move_t *p = list->move; p != list_end; p++) {
+    for(move_t *p = lst->move; p != list_end; p++) {
         if(p->status != sts) continue;
         if(!firstline) dprn("%s", ", ");
-        /* dprn("%s (%d move%s)", encode_move(p->lin, p->col),
-           p->depth, plural(p->depth)); */
-        dprn("%s(%d)", encode_move(p->lin, p->col), p->depth);
+        dprn("%s", encode_move(p->lin, p->col));
         firstline = 0;
     }
     if(firstline) dprn("None");
@@ -354,27 +305,24 @@ void print_moves(movelist *list, int sts) {
 
 /* Print an analysis of the current confuguration of the board given
    it is player's turn. */
-void print_analysis(thinkdata *data, movelist *list, int player) {
+void print_analysis(movelist *lst, int player) {
     dprn("\n");
     dprn("Analysis for player %c:\n", player);
-    dprn("Number of moves until game end are between parentheses.\n");
     dprn("  Winning moves: ");
-    print_moves(list, player);
+    print_moves(lst, player);
     dprn("  Drawing moves: ");
-    print_moves(list, 'D');
+    print_moves(lst, 'D');
     dprn("  Loosing moves: ");
-    print_moves(list, opponent(player));
-    dprn("  Total analysed moves: %d\n", data->move_count);
+    print_moves(lst, opponent(player));
     dprn("\n");
 }
 
 /* Think and print analysis */
 void computer_analysis(char board[][3], int player) {
-    thinkdata data;
-    movelist list;
+    movelist lst;
 
-    think(board, &data, &list, player);
-    print_analysis(&data, &list, player);
+    think(board, &lst, player);
+    print_analysis(&lst, player);
 }
 
 /************************************************************ Game analysis ***/
@@ -383,15 +331,14 @@ void computer_analysis(char board[][3], int player) {
 /*** Game play ****************************************************************/
 
 void computer_plays(char board[][3], int player) {
-    int lin, col;
-    thinkdata data;
-    movelist list, best;
+    int lin, col, sts;
+    movelist lst, sel;
 
     dprn("Computer playing as %c.\n", player);
 
-    think(board, &data, &list, player);
-    bestmoves(&data, &list, &best, player);
-    choose_random(&best, &lin, &col);
+    sts = think(board, &lst, player);
+    select_moves(&lst, &sel, sts);
+    choose_random(&sel, &lin, &col);
 
     dprn("Move for player %c> %s\n", player, encode_move(lin, col));
 
@@ -490,7 +437,7 @@ void game(int computer_plays_X, int computer_plays_O) {
 /*** Main *********************************************************************/
 
 void show_usage(void) {
-    dprn("Usage: velha [-n <number of pĺayers>]\n");
+    dprn("Usage: velha [-n <number of human pĺayers>]\n");
     dprn("Number of players:\n");
     dprn("  0: Computer against itself.\n");
     dprn("  1: You against the computer (default).\n");
