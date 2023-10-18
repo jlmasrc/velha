@@ -438,6 +438,12 @@ void game(int computer_plays_X, int computer_plays_O) {
 
 /*** Main *********************************************************************/
 
+void show_title(void) {
+    dprn("\n");
+    dprn("                --- Tic-Tac-Toe ---\n");
+    dprn("\n");
+}
+
 void show_usage(void) {
     dprn("Usage: velha [-n <number of human pĺayers>]\n");
     dprn("Number of players:\n");
@@ -479,7 +485,14 @@ void show_contenders(int computer_plays_X, int computer_plays_O) {
 int main(int argc, char **argv) {
 
     int computer_plays_X, computer_plays_O;
-    int opt, nplayers = 1;
+    int opt, nplayers;
+
+
+    /*** Command line processing **********************************************/
+
+    /* If no command line option is given, human plays against
+       computer. */
+    nplayers = 1;
 
     while((opt = getopt(argc, argv, "n:h")) != -1) {
         switch(opt) {
@@ -494,27 +507,32 @@ int main(int argc, char **argv) {
 
     switch(nplayers) {
     case 0:
+        /* Computer plays both. */
         computer_plays_X = 1;
         computer_plays_O = 1;
         break;
     case 1:
+        /* Human vs computer. Human first. */
         computer_plays_X = 0;
         computer_plays_O = 1;
         break;
     case 2:
+        /* Human plays both. Analysis mode. */
         computer_plays_X = 0;
         computer_plays_O = 0;
         break;
     }
 
+    /********************************************** Command line processing ***/
+
+
     srand(time(0));
 
-    dprn("\n");
-    dprn("                --- Tic-Tac-Toe ---\n");
-    dprn("\n");
+    show_title();
 
     if(!computer_plays_X || !computer_plays_O) show_commands();
 
+    /* Loop for new games. */
     for(;;) {
         show_contenders(computer_plays_X, computer_plays_O);
 
@@ -524,7 +542,9 @@ int main(int argc, char **argv) {
 
         dprn("\nNew game.\n\n");
 
-        if(computer_plays_X != computer_plays_O) {
+        if(nplayers == 1) {
+            /* If player against computer, swap the first player each
+               new game */
             computer_plays_X = !computer_plays_X;
             computer_plays_O = !computer_plays_O;
         }
