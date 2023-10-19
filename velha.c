@@ -48,18 +48,24 @@ void msleep(int ms) {
     while(nanosleep(&req, &rem)) req = rem;
 }
 
+/* If 1, lines are output at a rate of 20 lines per second (50 milisec
+   delay). This makes the output easier to follow. This is the default
+   value, it is changed via command line (see main). */
+int enable_pace = 1;
+
 /* This works as a printf() function, but with delays after
-   newlines. It makes easier to follow the output. */
+   newlines. Output is limited to 199 chars per call. */
 __attribute__ ((format (printf, 1, 2)))
 void dprn(char *format, ...) {
-    char buffer[200], *p = buffer;
+    char buffer[200]; /* 199 chars + '\0'. */
+    char *p = buffer;
     va_list ap;
     va_start(ap, format);
     vsnprintf(buffer, sizeof(buffer), format, ap);
     va_end(ap);
     while(*p) {
         putchar(*p);
-        if(*p == '\n') msleep(50); /* 50 miliseconds delay. */
+        if(enable_pace && *p == '\n') msleep(50); /* 50 miliseconds delay. */
         p++;
     }
     fflush(stdout);
@@ -106,7 +112,10 @@ int status(char board[][3]) {
     return 'D';
 }
 
-/* Returns a value for the status st in the context of player. */
+/* Returns a value for the status st in the context of player:
+   -  1 if player wins
+   -  0 if game is a draw
+   - -1 if player looses */
 int value(int st, int player) {
     if(st == player) return 1;
     if(st == 'D') return 0;
@@ -128,12 +137,18 @@ typedef struct {
 
 /* List of movess. */
 typedef struct {
+    /* Maximum of 9 possible moves. */
     move_t move[9];
     int length;
 } movelist;
 
+/* Initializes lst as an empty list. */
+void movelist_init(movelist *lst) {
+    lst->length = 0;
+}
+
 /* Adds a move to lst. */
-void addmove(movelist *lst, int lin, int col, int sts) {
+void movelist_add(movelist *lst, int lin, int col, int sts) {
     lst->move[lst->length++] =
         /* C99 compound literal. */
         (move_t){.lin = lin, .col = col, .status = sts,};
@@ -158,7 +173,7 @@ int think(char board[][3], movelist *lst, int player) {
      /* Dummy values that get overwritten below. */
     int best_val = -2, best_status = 0;
 
-    if(lst) lst->length = 0;
+    if(lst) movelist_init(lst);
 
     for(int lin = 0; lin < 3; lin++) {
         for(int col = 0; col < 3; col++) {
@@ -174,9 +189,10 @@ int think(char board[][3], movelist *lst, int player) {
             if(!(sts = status(board))) sts = think(board, NULL, opp);
             board[lin][col] = ' ';
 
-            if(lst) addmove(lst, lin, col, sts);
+            if(lst) movelist_add(lst, lin, col, sts);
 
             if((val = value(sts, player)) > best_val) {
+                /* Update the best possible status */
                 best_val = val;
                 best_status = sts;
             }
@@ -184,6 +200,9 @@ int think(char board[][3], movelist *lst, int player) {
         }
     }
 
+    /* Return the best possible status for player in this
+       configuration. An optimal player will always choose a move that
+       results in this configuration. */
     return best_status;
 }
 
@@ -196,10 +215,10 @@ int think(char board[][3], movelist *lst, int player) {
 void select_moves(movelist *lst, movelist *sel, int sts) {
     move_t *lst_end = lst->move + lst->length;
 
-    sel->length = 0;
+    movelist_init(sel);
 
     for(move_t *p = lst->move; p != lst_end; p++)
-        if(p->status == sts) addmove(sel, p->lin, p->col, sts);
+        if(p->status == sts) movelist_add(sel, p->lin, p->col, sts);
 
 }
 
@@ -401,7 +420,7 @@ void game(int computer_plays_X, int computer_plays_O) {
 
             /* Delay before computer move. This makes the output
                easier to follow. */
-            msleep(1000);
+            if(enable_pace) msleep(1000);
             computer_plays(board, player);
 
         } else {
@@ -445,11 +464,12 @@ void show_title(void) {
 }
 
 void show_usage(void) {
-    dprn("Usage: velha [-n <number of human pĺayers>]\n");
-    dprn("Number of players:\n");
+    dprn("Usage: velha [-n <number of human pĺayers>] [-p]\n");
+    dprn("Number of human players:\n");
     dprn("  0: Computer against itself.\n");
     dprn("  1: You against the computer (default).\n");
     dprn("  2: Two human players (analysis mode).\n");
+    dprn("-p: disable pace in output (enable fast output).\n");
     exit(0);
 }
 
@@ -494,10 +514,13 @@ int main(int argc, char **argv) {
        computer. */
     nplayers = 1;
 
-    while((opt = getopt(argc, argv, "n:h")) != -1) {
+    while((opt = getopt(argc, argv, "n:ph")) != -1) {
         switch(opt) {
         case 'n':
             nplayers = atoi(optarg);
+            break;
+        case 'p':
+            enable_pace = 0;
             break;
         case 'h':
         default:
